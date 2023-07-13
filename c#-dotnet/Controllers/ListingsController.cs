@@ -1,10 +1,12 @@
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Logging;
 using listingapi.Infrastructure.Database;
 using listingapi.Models;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -68,7 +70,7 @@ namespace listingapi.Controllers
             try
             {
                 // Insert
-                var createDate = DateTime.Now;
+                var createDate = DateTime.UtcNow;
                 var result = new Infrastructure.Database.Models.Listing
                 {
                     BedroomsCount = listing.BedroomsCount,
@@ -108,40 +110,59 @@ namespace listingapi.Controllers
         [Route("{id}")]
         [ProducesResponseType(StatusCodes.Status200OK, Type = typeof(ListingReadOnly))]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<IActionResult> PutListingAsync(int id, [FromBody] Listing listing, CancellationToken cancellationToken)
+        public async Task<IActionResult> PutListingAsync(
+            [FromRoute] int id,
+            [FromBody] Listing listing,
+            CancellationToken cancellationToken)
         {
             if (id <= 0 || listing == null || listing.PostalAddress == null)
+            {
                 return BadRequest();
+            }
 
             try
             {
                 // include Prices here
-                var result = _listingsContext.Listings
-                    .FirstOrDefault(l => l.Id == id);
-                if (result == null) return NotFound();
+                Infrastructure.Database.Models.Listing result = await _listingsContext.Listings
+                    .SingleOrDefaultAsync(l => l.Id == id, cancellationToken);
+
+                if (result == null)
+                {
+                    return NotFound();
+                }
 
                 // Update listing
-                var priceDate = DateTime.Now;
+                DateTime priceDate = DateTime.UtcNow;
+                double price = listing.LatestPriceEur;
+
                 result.BedroomsCount = listing.BedroomsCount;
                 result.BuildingType = listing.BuildingType.ToString();
                 result.ContactPhoneNumber = listing.ContactPhoneNumber;
-                result.UpdatedDate = DateTime.Now;
+                result.UpdatedDate = priceDate;
                 result.Name = listing.Name;
                 result.Description = listing.Description;
-                result.Price = listing.LatestPriceEur;
+                result.Price = price;
                 result.RoomsCount = listing.RoomsCount;
                 result.SurfaceAreaM2 = listing.SurfaceAreaM2;
                 result.City = listing.PostalAddress.City;
                 result.Country = listing.PostalAddress.Country;
                 result.PostalCode = listing.PostalAddress.PostalCode;
                 result.StreetAddress = listing.PostalAddress.StreetAddress;
-                _listingsContext.Listings.Update(result);
-                await _listingsContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+                // Track price changes.
+                result.ListingPriceChanges.Add(new Infrastructure.Database.Models.ListingPriceHistory
+                {
+                    CreatedAt = priceDate,
+                    Price = price
+                });
+
+                await _listingsContext.SaveChangesAsync(cancellationToken);
+
                 return Ok(MapListing(result));
             }
             catch (Exception ex)
             {
-                _logger.LogError($"PutListingAsync. Listing : {listing}. Exception : {ex}");
+                _logger.LogError(ex, "PutListingAsync. Listing={listing}", listing);
                 return StatusCode(500);
             }
         }
@@ -155,20 +176,26 @@ namespace listingapi.Controllers
         [ProducesResponseType(StatusCodes.Status200OK, Type = typeof(ICollection<PriceReadOnly>))]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         [Route("{id}/prices")]
-        public IActionResult GetListingPriceHistory(int id)
+        public async ValueTask<PriceReadOnly[]> GetListingPriceHistory(
+            [FromRoute, Range(1, int.MaxValue)] int id,
+            CancellationToken cancellationToken)
         {
-            // ToDo : implement me !
-            return Ok(new List<PriceReadOnly>
+            // This whole method should be in another class.
+            if (id <= 0)
             {
-                new PriceReadOnly
+                throw new ArgumentOutOfRangeException(nameof(id), id, message: null);
+            }
+
+            return await _listingsContext.Listings
+                .Where(e => e.Id == id)
+                .SelectMany(e => e.ListingPriceChanges)
+                .OrderBy(e => e.CreatedAt)
+                .Select(e => new PriceReadOnly
                 {
-                    PriceEur = 130000
-                },
-                new PriceReadOnly
-                {
-                    PriceEur = 250000
-                }
-            });
+                    CreatedDate = e.CreatedAt,
+                    PriceEur = e.Price,
+                })
+                .ToArrayAsync(cancellationToken);
         }
 
         private static ListingReadOnly MapListing(Infrastructure.Database.Models.Listing listing)

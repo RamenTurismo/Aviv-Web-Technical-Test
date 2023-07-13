@@ -6,6 +6,6 @@ namespace listingapi.Models
     public partial class PriceReadOnly : Price
     {
         [JsonProperty("created_date")]
-        public DateTime CreatedDate { get; set; }
+        public DateTimeOffset CreatedDate { get; set; }
     }
 }

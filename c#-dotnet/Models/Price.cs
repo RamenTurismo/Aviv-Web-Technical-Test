@@ -1,4 +1,5 @@
 using Newtonsoft.Json;
+using System.Security.Cryptography.Xml;
 
 namespace listingapi.Models
 {
@@ -6,6 +7,6 @@ namespace listingapi.Models
     {
         /// <summary>A price, expressed in euros.</summary>
         [JsonProperty("price_eur")]
-        public int PriceEur { get; set; }
+        public double PriceEur { get; set; }
     }
 }
