@@ -39,7 +39,7 @@ Concerning the implementation :
 - The currency type is missing in the database.
 - I prefer separating the configuration from the entity itself, so I put everything in `OnModelCreation` of the `DbContext`. It futures proof as for complex link between tables for example. I'd let EFCore deduce less as possible.
 - I added validation twice : as a `RangeAttribute` and one in the method itself. This could be refractored.
-- Added a package to handle SnakeCase naming instead of configuring it ourselves for each property / table.
+- We could add a package to handle SnakeCase naming instead of configuring it ourselves for each property / table.
 - `DateTime.Now` should be replaced by a mockable interface for unit testing.
 
 ## Questions
